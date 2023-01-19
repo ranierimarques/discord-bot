@@ -29,7 +29,7 @@ const lastWeekTasksQuery = gql`
   query LastWeekTasksQuery {
     issues(
       filter: {
-        updatedAt: { gt: "-P1WT10H" }
+        updatedAt: { gt: "-P1W" }
         state: { type: { in: ["started", "completed"] } }
         project: { id: { eq: "5c27de44-6f1d-4895-bb90-9e0de4225532" } }
       }

@@ -25,63 +25,117 @@ const query = gql`
   }
 `
 
+const lastWeekTasksQuery = gql`
+  query LastWeekTasksQuery {
+    issues(
+      filter: {
+        updatedAt: { gt: "-P1WT10H" }
+        state: { type: { in: ["started", "completed"] } }
+        project: { id: { eq: "5c27de44-6f1d-4895-bb90-9e0de4225532" } }
+      }
+    ) {
+      nodes {
+        title
+        updatedAt
+        estimate
+        identifier
+        assignee {
+          name
+        }
+        state {
+          type
+          name
+        }
+      }
+    }
+  }
+`
+
+function getDate(ISOString) {
+  return new Date(ISOString)
+    .toLocaleDateString('pt-BR', {
+      month: '2-digit',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+    })
+    .replace(' ', ' às ')
+}
+
 client.login(process.env.DISCORD_TOKEN)
 
 client.once(Events.ClientReady, c => {
   console.log(`Ready! Logged in as ${c.user.tag}`)
 })
 
-client.once('ready', async client => {
-  const linear = await request('https://api.linear.app/graphql', query, undefined, {
-    Authorization: process.env.LINEAR_TOKEN,
-  })
-  const projectProgressInPercentage = Math.floor(linear.project.progress * 100)
+const LINEAR_BASE_URL = 'https://api.linear.app/graphql'
+const headers = {
+  Authorization: process.env.LINEAR_TOKEN,
+}
 
-  client.channels.cache
-    .get('859265030809583636')
-    .send(
-      `Olá senhores. Gostaria de me apresentar, me chamo **Jarvis** e eu sou o mais novo ajudante aqui no servidor. Eu fui criado com o intuito de ajuda-lós a alcançar os seus objetivos, que não são pequenos.`
-    )
-  client.channels.cache
-    .get('859265030809583636')
-    .send(
-      `No momento precisamos finalizar a Versão 1 do projeto da Becca, então nada melhor que uma ajuda não é?`
-    )
-  client.channels.cache
-    .get('859265030809583636')
-    .send(
-      `Todos os dias eu comunicarei o nosso progresso do projeto para incentiva-lós a produzirem mais!`
-    )
-  client.channels.cache
-    .get('859265030809583636')
-    .send(`Ah, com exceção dos finais de semanas claro, você precisam descansar também.`)
-  client.channels.cache
-    .get('859265030809583636')
-    .send(
-      `(ou não, mas meu programa diz para não distrai-lós nesses dias, eu não sei porque colocaram essas regras tolas, mas está no meu código fonte, eu não posso fazer nada.)`
-    )
-  client.channels.cache
-    .get('859265030809583636')
-    .send(
-      `Mas eu não vim aqui para reclamar, eu vim para avisa-lós que atualmente o projeto da Becca está **${projectProgressInPercentage}%** concluído!`
-    )
-  client.channels.cache
-    .get('859265030809583636')
-    .send(`Por favor, aumentem essa porcentagem. Conto com vocês! 💙`)
+client.once('ready', async client => {
+  const channel = client.channels.cache.get('957362163750670336')
 
   let scheduledMessage = new cron.CronJob({
     cronTime: '0 10 * * 1-5',
     timeZone: 'America/Sao_Paulo',
     onTick: async () => {
-      const linear = await request('https://api.linear.app/graphql', query, undefined, {
-        Authorization: process.env.LINEAR_TOKEN,
-      })
+      const linear = await request(LINEAR_BASE_URL, query, undefined, headers)
       const projectProgressInPercentage = Math.floor(linear.project.progress * 100)
 
       const message = `Bom dia, senhores. Atualmente o projeto da Becca está **${projectProgressInPercentage}%** concluído!`
-      client.channels.cache.get('957362163750670336').send(message)
+      channel.send(message)
+    },
+  })
+
+  let scheduledMessage2 = new cron.CronJob({
+    cronTime: '0 10 * * 3',
+    timeZone: 'America/Sao_Paulo',
+    onTick: async () => {
+      const linear = await request(
+        LINEAR_BASE_URL,
+        lastWeekTasksQuery,
+        undefined,
+        headers
+      )
+
+      const issuesPerAssignee = linear.issues.nodes.reduce((total, current) => {
+        return {
+          ...total,
+          [current.assignee.name]: [...(total[current.assignee.name] ?? []), current],
+        }
+      }, {})
+
+      const mappedIssuesPerAssignee = Object.entries(issuesPerAssignee)
+
+      channel.send(
+        `@everyone Bom dia, Senhores.\n\nHoje é dia de atualização!\n\nTrouxe uma ajuda para relembrar vocês do que foi feito durante os últimos **7** dias:`
+      )
+
+      const textToSend = mappedIssuesPerAssignee.reduce((total, [assignee, issues]) => {
+        const formattedIssues = issues.reduce((total, issue) => {
+          const emotes = {
+            Done: ':purple_circle:',
+            'In Review': ':blue_circle:',
+            'In Progress': ':yellow_circle:',
+            Handoff: ':green_circle:',
+          }
+
+          return (
+            total +
+            `\n  - [${issue.estimate}] ${issue.title} *#${issue.identifier}* (**${getDate(
+              issue.updatedAt
+            )}**) ${emotes[issue.state.name]}`
+          )
+        }, '')
+
+        return total + `\n\n> **${assignee}** (${issues.length}):${formattedIssues}`
+      }, '')
+
+      channel.send(textToSend)
     },
   })
 
   scheduledMessage.start()
+  scheduledMessage2.start()
 })

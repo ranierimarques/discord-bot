@@ -81,7 +81,7 @@ client.once('ready', async client => {
     timeZone: 'America/Sao_Paulo',
     onTick: async () => {
       const linear = await request(LINEAR_BASE_URL, query, undefined, headers)
-      const projectProgressInPercentage = Math.floor(linear.project.progress * 100)
+      const projectProgressInPercentage = Math.round(linear.project.progress * 100)
 
       const message = `Bom dia, senhores. Atualmente o projeto da Becca está **${projectProgressInPercentage}%** concluído!`
       channel.send(message)
